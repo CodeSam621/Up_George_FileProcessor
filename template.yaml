@@ -1,0 +1,146 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  file-processor
+
+  Sample SAM Template for file-processor
+  
+Globals:
+  Function:
+    Timeout: 900
+
+Parameters:
+  Bucket:
+    Type: String
+    Default: existing-json-file-bucket
+
+Resources:
+  FileProcessorFunction:
+    Type: AWS::Serverless::Function
+    DependsOn:
+      - FileProcessingInfoDynamoDBTable
+    Properties:
+      CodeUri: file-processor/
+      Handler: app.fileProcessorHandler
+      Runtime: nodejs16.x
+      Architectures:
+        - x86_64
+      Role:
+      Policies:
+      - AWSLambdaBasicExecutionRole
+      - Version: '2012-10-17'
+        Statement:
+        - Sid: VisualEditor0
+          Effect: Allow
+          Action:
+          - s3:ListBucket
+          - s3:GetBucketLocation
+          Resource:
+            Fn::Sub: arn:aws:s3:::${Bucket}
+        - Sid: VisualEditor1
+          Effect: Allow
+          Action:
+          - s3:*
+          Resource:
+            Fn::Sub: arn:aws:s3:::${Bucket}/*
+        - Sid: VisualEditor2
+          Effect: Allow
+          Action:
+          - sqs:*
+          Resource:
+            Fn::GetAtt:
+            - SQSFileNotification
+            - Arn
+        - Sid: VisualEditor3
+          Effect: Allow
+          Action:
+          - dynamodb:*
+          Resource:
+            Fn::GetAtt:
+            - FileProcessingInfoDynamoDBTable
+            - Arn
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue:
+              Fn::GetAtt:
+              - SQSFileNotification
+              - Arn
+            BatchSize: 1
+
+  FileS3ToSQSSenderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: file-processor/
+      Handler: app.sendMessageToSQSHandler
+      Runtime: nodejs16.x
+      Architectures:
+        - x86_64
+      Role:
+      Policies:
+      - AWSLambdaBasicExecutionRole
+      - Version: '2012-10-17'
+        Statement:
+        - Sid: VisualEditor0
+          Effect: Allow
+          Action:
+          - s3:ListBucket
+          - s3:GetBucketLocation
+          Resource:
+            Fn::Sub: arn:aws:s3:::${Bucket}
+        - Sid: VisualEditor1
+          Effect: Allow
+          Action:
+          - s3:*
+          Resource:
+            Fn::Sub: arn:aws:s3:::${Bucket}/*
+        - Sid: VisualEditor2
+          Effect: Allow
+          Action:
+          - sqs:*
+          Resource:
+            Fn::GetAtt:
+            - SQSFileNotification
+            - Arn
+
+  FileProcessingInfoDynamoDBTable: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      AttributeDefinitions: 
+        - 
+          AttributeName: "MessageId"
+          AttributeType: "S"
+
+      KeySchema:
+        - 
+          AttributeName: "MessageId"
+          KeyType: "HASH"
+
+      ProvisionedThroughput: 
+        ReadCapacityUnits: "5"
+        WriteCapacityUnits: "5"
+      TableName: "FileProcessingInfo"
+
+  SQSFileNotification:
+    Type: AWS::SQS::Queue
+    Properties:
+      FifoQueue: true
+      QueueName:
+        Fn::Sub: json-file-info.fifo
+      VisibilityTimeout: 900
+      MessageRetentionPeriod: 1209600
+
+# Outputs:
+#   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
+#   # Find out more about other implicit resources you can reference within SAM
+#   # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
+#   HelloWorldApi:
+#     Description: "API Gateway endpoint URL for Prod stage for Hello World function"
+#     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello/"
+#   HelloWorldFunction:
+#     Description: "Hello World Lambda Function ARN"
+#     Value: !GetAtt HelloWorldFunction.Arn
+#   HelloWorldFunctionIamRole:
+#     Description: "Implicit IAM Role created for Hello World function"
+#     Value: !GetAtt HelloWorldFunctionRole.Arn
